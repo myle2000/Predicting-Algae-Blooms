@@ -1,0 +1,368 @@
+---
+title: "Predicting Algae Blooms"
+author: "Nhóm 11"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Nhóm sinh viên:
+  1. Lê Đỗ Trà My             18133030    Multiple linear regression, 
+                                          Thực hiện chọn mô hình và dự đoán
+                                          
+  2. Võ Thị Thanh Ngân        18133033    k-fold cross-validation, độ đo NMSE
+  
+  3. Huỳnh Thị Hương Ly       18133029    Regression tree
+  
+  4. Phan Thành Trung         18133054    RandomForest, Tiền xử lí
+
+# 1. Tóm tắt
+	
+  Sự xuất hiện dày đặt của tảo ( mật độ tảo tăng nhanh chóng- gọi là "nở hoa"),  ảnh tưởng đến môi trường sống của sinh vật dưới nước và chất lượng nguồn nước. Việc theo dõi và thực hiện dự báo sớm về sự nở hoa của tảo là cần thiết để nâng cao chất lượng các dòng sông, cũng như đời sống các sinh vật dưới nước.Với mục tiêu giải quyết vấn đề dự đoán này, một số mẫu nước được thu thập ở các con sông khác nhau ở Châu Âu vào những thời điểm khác nhau trong một năm.
+	Trước hết, đây là một bài toán hồi quy nên ta chỉ sử dụng các mô hình, thuật toán liên đến nội dung này. Dữ liệu sẽ được thực hiện tiền xử lí do chứa các giá trị chưa biết 'NA'. Sau đó, ta tiến hành huấn luyện dữ liệu trên Multiple linear regression, Regression tree và RandomForest. Tiếp theo, ta sử dụng k-fold cross-validation để đánh giá hiệu suất mô hình theo độ đo NMSE và đưa ra lựa chọn phù hợp cho từng loại tảo. Cuối cùng, quá trình dự đoán kết quả được thực hiện.
+	
+# 2. Giới thiệu
+  
+  Hiện tượng "tảo nở hoa" ảnh tưởng rất nhiều đến môi trường sống của sinh vật dưới nước và chất lượng nguồn nước.Động lực chính đằng sau ứng dụng này là do việc giám sát hóa học rẻ và dễ dàng tự động hóa, trong khi việc phân tích sinh học của các mẫu để xác định tảo có trong nước bao gồm việc kiểm tra bằng kính hiển vi, đòi hỏi nhân lực được đào tạo, và do đó , vừa đắt vừa chậm. Do đó, việc có được các mô hình có thể dự đoán chính xác tần số tảo dựa trên các đặc tính hóa học sẽ tạo điều kiện thuận lợi cho việc tạo ra các hệ thống tự động và rẻ tiền để theo dõi sự nở hoa của tảo có hại.
+	Input: 11 biến đầu vào lần lượt mô tả nội dung 4 mùa trong năm, kích thước của sông, tốc độ nước của sông và giá trị của các thông số hóa học khác nhau được đo trong mẫu nước gồm Giá trị pH tối đa, Giá trị tối thiểu của O2 (oxy), Giá trị trung bình của Cl(clorua), Giá trị trung bình của NO−3 (nitrat), Giá trị trung bình của amoni, Trung bình của orthophosphat, rung bình của tổng PO4 (phốt phát), Ý nghĩa của chất diệp lục.
+	Output: Tần suất xuất hiện của 7 loại tảo.
+	Phương pháp nhóm sử dụng: Multiple linear regression, Regression tree và RandomForest
+	Cách đánh giá: k-fold cross-validation
+	Độ đo: NMSE- normalized mean squared error
+	
+# 3. Dữ liệu
+	
+Mô tả, giải thích tập dữ liệu: Dữ liệu Algae gồm 18 thuộc tính với các giá trị như sau:
+  - 3 cột đầu tiên là biến định danh (nominal): mô tả 4 mùa trong năm, kích thước của sông và tốc độ nước của sông.
+	- 8 biến còn lại là giá trị của các thông số hóa học khác nhau được đo trong mẫu nước: Giá trị pH tối đa, Giá trị tối thiểu của O2 (oxy), Giá trị trung bình của Cl(clorua), Giá trị trung bình của NO−3 (nitrat),Giá trị trung bình của amoni, Trung bình của orthophosphat, rung bình của tổng PO4 (phốt phát), Ý nghĩa của chất diệp lục.
+	- 7 cột tiếp theo là tần số suất xuất hiện 7 loại tảo có hại.
+Thành phần training/validation/test set:
+  - “Analysis.txt”(algae): Gồm 200 mẫu nước, 18 thuộc tính, được dùng để huấn luyện.
+  - “Eval.txt”(test.algae): Gồm 140 mẫu nước, 11 thuộc tính(bỏ qua 7 cột tần suất của tảo), được dùng để kiểm tra.
+    - “Sols.txt”(algae.sols):  Chứa tần suất tảo của 140 mẫu nước của "Eval.txt", tệp này dùng để kiểm định kết quả tần suất sau khi dự đoán được.
+	Vì dữ liệu có chứa giá trị chưa biết 'NA' nên cần thực hiện quá trình tiền xử lí dữ liệu.
+
+## 3.1. Load dữ liệu
+```{r}
+library(ggplot2)
+library(DMwR2)
+library(dplyr)
+library(rpart)
+data(algae, package="DMwR2")
+algae
+```
+```{r}
+tibble::as_tibble(algae)
+
+```
+
+
+## 3.2. Tiền xử lí
+  
+  Vì dữ liệu chứa nhiều giá trị chưa biết 'NA' nên ta cần thực hiện tiền xử lí trước khi thực hiện dự đoán. Qua quan sát ban đầu, ta thấy rằng hai đối tượng ở hàng 62 và 199 chứa nhiều giá trị 'NA'(>20% tổng các biến) nên ta loại bỏ hai đối tượng này. Tiếp theo, ta sử dụng knnImputation() để tính toán và điền vào các giá trị 'NA'. 
+  knnImputation() sử dụng một biến thể của khoảng cách Euclide để tìm k(mặc định là 10) lân cận gần nhất của bất kỳ trường hợp nào, sau đó tính toán và điền vào giá trị chưa biết. Có hai lựa chọn tính toán theo knnImputation(): một là tính toán trung bình của các giá trị của k láng giềng gần nhất để lấp đầy khoảng trống, hai là sử dụng giá trị trung bình có trọng số của các giá trị lân cận, trong đó trọng lượng giảm khi khoảng cách đến trường hợp của những người hàng xóm tăng lên. Ở đây, chúng em sử dụng cách thứ hai meth = 'weightAvg', cũng là lựa chọn mặc định.
+```{r}
+data(algae, package="DMwR2")
+manyNAs(algae)
+algae <-  algae[-manyNAs(algae), ]
+clean.algae <- knnImputation(algae, k = 10) #làm sach dữ liệu
+clean.algae
+```
+# 4. Giải pháp
+
+## 4.1. Multiple linear regression
+  
+  Multiple linear regression là một phương pháp để dự đoán biến phụ thuộc (Y) dựa trên giá trị của biến độc lập (X). Nó có thể được sử dụng cho các trường hợp chúng ta muốn dự đoán một số lượng liên tục.
+Nó phù hợp cho các trường hợp như sau:
+    -Mối quan hệ chặt chẽ như thế nào giữa hai hoặc nhiều biến độc lập và một biến phụ thuộc (ví dụ: lượng mưa, nhiệt độ và lượng phân bón bổ sung ảnh hưởng như thế nào đến sự phát triển của cây trồng)
+    -Giá trị của biến phụ thuộc tại một giá trị nhất định của các biến độc lập (ví dụ: năng suất dự kiến của cây trồng ở các mức lượng mưa, nhiệt độ và lượng phân bón nhất định)
+    
+## 4.2. Regression tree 
+  
+  Cây hồi quy có thể được coi là một biến thể của cây quyết định, được thiết kế để xấp xỉ các hàm có giá trị thực, thay vì được sử dụng cho các phương pháp phân loại.
+  Cây hồi quy là một hệ thống phân cấp các phép thử logic trên một số biến giải thích. Các mô hình dựa trên cây tự động chọn các biến có liên quan hơn; do đó, không phải tất cả các biến cần phải xuất hiện trong cây.
+
+## 4.3.RandomForest
+  
+  Random Forests là thuật toán học có giám sát (supervised learning). Random Forests có nhiều cây, mỗi cây phát triển đầy đủ (không cắt tỉa sau); và ở mỗi bước của quá trình phát triển cây, phần tách tốt nhất cho mỗi nút được chọn từ một tập hợp con ngẫu nhiên của các thuộc tính. Các dự đoán cho các nhiệm vụ hồi quy thu được bằng cách lấy trung bình các dự đoán của các cây trong tập hợp
+  Random forests được coi là một phương pháp chính xác và mạnh mẽ vì số cây quyết định tham gia vào quá trình này. Nó không bị vấn đề overfitting. Lý do chính là nó mất trung bình của tất cả các dự đoán, trong đó hủy bỏ những thành kiến
+
+
+## 4.4. Kỹ thuật đánh giá: K-fold Cross Validation
+
+  Lấy k tập hợp con ngẫu nhiên trong tập dữ liệu huấn luyện có kích thước bằng nhau(dữ liệu được lấy ngẫu nhiên). Với mỗi k tập con này, xây dựng một mô hình bằng cách sử dụng k - 1 tập hợp và đánh giá mô hình này trên tập con thứ k. Ước tính k−fold cross validation sẽ là giá trị trung bình của k điểm riêng lẻ thu được trên mỗi phân vùng thử nghiệm. 
+  K-fold CV thường là thủ tục được chọn để ước tính hiệu suất của một mô hình.Đây là khuyến nghị cho các bộ dữ liệu cỡ trung bình (vài trăm đến vài nghìn trường hợp) rất phù hợp với dữ liệu nghiên cứu của chúng ta. 
+
+
+# 5. Thực nghiệm và kết quả
+  
+## 5.1. Multiple linear regression
+
+```{r}
+
+lm.a1 <- lm(a1 ~ ., data = clean.algae[, 1:12])
+summary(lm.a1)
+anova(lm.a1)
+```
+  Nhận xét: Kết quả chỉ ra rằng biến season là biến góp phần ít nhất vào việc giảm sai số phù hợp của mô hình, vì nó có tổng bình phương còn lại nhỏ nhất Sum Sq (tổng sai số của mô hình)
+
+### Mô hình hồi quy: bỏ thuộc tính 'season' và so sánh với mô hình ban đầu
+
+```{r}
+lm2.a1 <- update(lm.a1, . ~ . - season)
+summary(lm2.a1)
+anova(lm.a1,lm2.a1)
+```
+  Nhận xét: So sánh cho thấy sự khác biệt giữa mô hình đã loại bỏ thược tính 'Season' và chưa bỏ thuộc tính này là không có ý nghĩa, vì giá trị của Pr (> F) bằng 0,69 cao hơn 0,05. Tuy nhiên, mô hình này đơn giản hơn mô hình đầu tiên. Do vậy, ta sẽ lặp lại thao tác này để tiếp tục đơn giản hóa mô hình.
+
+### Mô hình hồi quy:Thử bỏ các thuộc tính khác để làm đơn giản mô hình
+```{r}
+final.lm <- step(lm.a1)
+summary(final.lm)
+```
+  Nhận xét: Tuy mô hình dần được đơn giản hóa nhưng tỷ lệ phương sai được giải thích bởi mô hình này vẫn không cao (33%). Loại tỷ lệ như vậy thường là một dấu hiệu cho thấy các giả định về độ tuyến tính của mô hình này không phù hợp. nhưng ta vẫn giữ lại để sử dụng nó cho việc so sánh giữa các mô hình.
+
+## 5.2. Regression tree
+  
+  Cây thường được lấy trong hai bước. Ban đầu, một cây lớn được trồng, và sau đó cây này được cắt tỉa bằng cách xóa các nút dưới cùng thông qua quá trình ước tính thống kê. Quá trình này có mục tiêu là tránh overfitting.Cây được trồng bởi package rpart () ngừng phát triển khi độ lệch (tham số cp) giảm xuống dưới ngưỡng mặc định là 0,01
+```{r}
+data(algae, package="DMwR2") 
+algae <- algae[-manyNAs(algae), ] #làm sạch
+rt.a1 <- rpart(a1 ~ ., data = algae[, 1:12])
+rt.a1
+```
+  Các dòng có đánh dấu (*) chính là các nút lá của cây.
+```{r}
+library(rpart.plot)
+prp(rt.a1,extra=101,box.col="orange",split.box.col="grey")
+```
+  Nhận xét: Theo hình vẽ nhánh phải ngoài cùng, ta thấy có 11 mẫu có giá trị $15 <= PO_4 < 44$ và mxPH < 7.9. Như vậy, thông qua cây hồi quy, ta quan sát được đối tượng nghiêng cứu. 
+```{r}
+library(RColorBrewer)
+library(rattle)
+fancyRpartPlot(rt.a1, cex=0.7)
+```
+
+
+## Tỉa theo rpartXse
+ 
+ Để tránh vấn đề "overfitting" trong sử sụng mô hình cây hồi quay ta phải tiến hành cắt tỉa cây. Ở đây, ta sử dụng rpartXse().
+ Trồng cây theo rpartXse() thì cây được tự động cắt tỉa với tham số se-giá trị với số lỗi tiêu chuẩn cần sử dụng trong quá trình cắt tỉa cây(mặc định là 1). Ngoài ra, ta có thể thực hiện cấu hình cho các tham số như cp(sự giảm sai số của nút hiện tại xuống dưới một ngưỡng nhất định, mặc định là 0), minsplit(số lượng mẫu trong nút ít hơn ngưỡng khác, mặc định là 6),..
+
+```{r}
+(rt.a1 <- rpartXse(a1 ~ ., data = algae[, 1:12],se=0.3))
+fancyRpartPlot(rt.a1, cex=0.7)
+```
+
+## 5.3. Đánh giá và lựa chọn mô hình
+  
+  Tiêu chí phổ biến nhất để đánh giá mô hình là tiêu chí tính hiệu suất dự đoán của mô hình (predictive performance of the models). Để thu được hiệu suất này bằng cách so sánh giá trị dự đoán model với giá trị thực của biến cần dự đoán và tính toán NMSE-normalized mean squared error.
+  Bước đầu tiên, thu thập model predictions.
+```{r}
+lm.predictions.a1 <- predict(final.lm,clean.algae)
+rt.predictions.a1 <- predict(rt.a1,algae)
+```
+
+### Độ đo: NMSE-normalized mean squared error 
+  
+  Thống kê này tính toán tỷ lệ giữa sai số bình phương hình thức của các mô hình và giá trị trung bình của biến mục tiêu.
+  $$NMSE = \frac{\sum_{i=1}^{N_{test}} (\widehat{y_i}-y_i)^2}{ \sum_{i=1}^{N_{test}} (\bar{y}-y_i)^2}$$
+  Trong đó: 
+    ▫	$\widehat{y}$ là là dự đoán của mô hình được đánh giá cho trường hợp i và $y_i$ là  giá trị biến mục tiêu thực tế tương ứng.
+    ▫	$\bar{y}$ là giá trị trung bình mẫu của biến mục tiêu trong train data 
+
+  Dưới đây là ví dụ về độ do NMSE cho dự đoán tảo a1 trên 2 mô hình.
+```{r}
+(nmse.a1.lm <- mean((lm.predictions.a1-algae[['a1']])^2)/
+               mean((mean(algae[['a1']])-algae[['a1']])^2))
+(nmse.a1.rt <- mean((rt.predictions.a1-algae[['a1']])^2)/
+               mean((mean(algae[['a1']])-algae[['a1']])^2))
+
+```
+  NMSE là một phép đo sai số thường nằm trong khoảng từ 0 đến 1. Nếu mô hình hoạt động tốt thì NMSE thì dưới 1. NMSE càng nhỏ càng tốt.Đôi khi, nên thực hiện một số loại kiểm tra trực quan các dự đoán của các mô hình để đánh giá , sử dụng biểu đồ phân vùng của các sai số.
+
+```{r , fig.width=6, fig.height=6}
+par(mfrow=c(2,1))
+
+plot(lm.predictions.a1,algae[["a1"]],main="Linear Model",
+ xlab="Predictions",ylab="True Values")
+abline(0,1,lty=2,col="red")#đường đứt nét nghiêng 45 độ
+
+
+plot(rt.predictions.a1,algae[["a1"]],main="Regression Tree",
+ xlab="Predictions",ylab="True Values")
+abline(0,1,lty=2,col="red")
+
+```
+  Nhận xét: Có nhiều giá trị dự đoán không sát thực tế. Để đạt hiệu quả, các dự đoán (điểm tròn), phải nằm trên đường đứt nét.Với Linear Model, mô hình này dự đoán tần số tảo âm trong một số trường hợp. Điều này không mang lại ý nghĩa gì, nên cần cải thiện lại mô hình tuyến tính: các giá trị âm sẽ thay thế bằng 0 (tảo sẽ không suất hiện) .
+
+
+
+## Thực nghiệm K-CV với cả 7 loại tảo
+  
+  K-fold Cross Validation là một trong những cách được sử dụng thường xuyên nhất để thu được các ước tính đáng tin cậy này cho các tập dữ liệu nhỏ như trường hợp này.
+  Hàm cross.validation () thực hiện quy trình K-fold Cross Validation.Kết quả của hàm là một danh sách với hai thành phần cũng là danh sách. Mỗi thành phần chứa hiệu suất của một trong các mô hình (hồi quy tuyến tính và cây hồi quy). Hiệu suất của các mô hình được mô tả bằng hiệu suất trung bình (được đo bằng NMSE) trên K folds. 
+  Trong đó: 
+    + metrics="nmse": độ đo sử dụng làm thước đo hiệu suất giữa các mô hình.
+    + nReps=5 : số lần lặp
+    + nFolds=10 : số tập con
+  Ở đây, ta thực hiện so sánh giữa mô hình Multiple linear regression(lm) và Regression tree(rpartXse) với 3 phiên bản được cắt tỉa với se=c(0.35,0.5,1)
+  Vì khi thực nghiệm trên tảo a1 với Multiple linear regression thì kết quả nhận được chứa giá trị âm, nên ta dùng post="onlyPos"(nếu âm thì thay thế bằng 0, ngược lại giữ nguyên cho kết quả dự đoán) để giải quyết điều này.
+  Dữ liệu đầu vào là tập huấn luyện algae(đã loại bỏ 2 hàng chứa nhiều giá trị NA) trừ 7 cột giá trị tấn suất xuất hiện 7 loại tảo. Trong lúc dùng performanceEstimation(), với đối tượng Multiple linear regression(lm), ta gọi pre="knnImp" để xử lí giá 'NA' vì đối tượng này không thể hoạt động hiệu quả với tập dữ liệu chứa 'NA'. Ngược lại, đối tượng Regression tree(rpartXse) với 3 phiên bản thì không bị ảnh hưởng nên không gọi pre="knnImp".
+
+```{r}
+library(performanceEstimation)
+DSs <- sapply(names(algae)[12:18],
+          function(x,names.attrs) { 
+            f <- as.formula(paste(x, "~ ."))
+            PredTask(f, algae[,c(names.attrs,x)], x, copy=TRUE) 
+          },
+          names(algae)[1:11])
+res.all <- performanceEstimation(
+    DSs,
+    c(Workflow(learner="lm", pre="knnImp", post="onlyPos"),
+      workflowVariants(learner="rpartXse", learner.pars=list(se=c(0.35,0.5,1)))),
+    EstimationTask(metrics="nmse" ,method=CV(nReps=5, nFolds=10)))
+```
+
+```{r}
+plot(res.all)
+```
+	Nhận xét: Như chúng ta có thể quan sát, có một số kết quả rất tệ; nghĩa là, điểm NMSE rõ ràng trên 1, đây là điểm cơ bản để cạnh tranh như dự đoán luôn giá trị biến mục tiêu trung bình cho tất cả các trường hợp thử nghiệm! Nếu chúng ta muốn kiểm tra xem đâu là mô hình tốt nhất cho từng vấn đề, chúng ta có thể sử dụng hàm topPerformers (). Ở đây ta dùng rankWorkflows(res.all, top=3) để quan sát 3 kết quả hiệu quả nhất với từng loại tảo.
+```{r}
+rankWorkflows(res.all, top=3)
+```
+  Nhận xét: Sử dụng cây hồi quy/phân loại đềo tạo ra các sai số ảnh hưởng đến chỉ số đánh giá, do đó ta sẽ thử dùng RandomForest
+
+##  5.4. RandomForest
+ 
+ Khi sử dụng RandomForest, ta cần chú ý:
+  + ntree: số cây trong khu rừng
+  + mtry: Số lượng các biến được lấy mẫu ngẫu nhiên như là các ứng cử viên tại mỗi lần tách
+  
+ Sử dụng K-VC để đo hiệu suất giữa các mô hình trước và 5 phiên bản của Random Forests. Ở đây, sau khi quan sát nhiều lần, ntree=c(150,250,550,600,750). Trong khi đó, mtry sẽ giữ nguyên là 2(từ 1-3 là khoảng giá trị tốt) bởi vì các giá trị mtry >= 4 sẽ cho NMSE >1 cho nhiều dự đoán. 
+```{r}
+library(randomForest)
+res.all <- performanceEstimation(
+    DSs,
+    c(Workflow(learner="lm", pre="knnImp",post="onlyPos"),
+      workflowVariants(learner="rpartXse",
+                       learner.pars=list(se=c(0.3,0.5,1))),
+      workflowVariants(learner="randomForest", pre="knnImp",
+                       learner.pars=list(ntree=c(150,250,550,600,750), mtry=2))),
+    EstimationTask(metrics="nmse",method=CV(nReps=5,nFolds=10)))
+```
+```{r}
+rankWorkflows(res.all, top=3)
+
+```
+
+## 5.5. Dự đoán
+  
+  Thông qua topPerformer(), ta sẽ quan sát được ứng với dự đoán cho từng loại tảo, lựa chọn nào là hiệu quả nhất.
+```{r}
+wfs <- sapply(taskNames(res.all),
+              function(t) topPerformer(res.all,metric="nmse",task=t))
+wfs[["a1"]]
+
+```
+```{r}
+wfs[["a2"]]
+```
+```{r}
+wfs[["a3"]]
+```
+```{r}
+wfs[["a4"]]
+```
+```{r}
+wfs[["a5"]]
+```
+```{r}
+wfs[["a6"]]
+```
+```{r}
+wfs[["a7"]]
+```
+## Xem kết quả cho 7 loại tảo trên tập huấn luyện
+  
+  Ma trận 'trues' là kết quả tần suất xuất hiện của 7 loại tảo(giá trị từ cột 12 đến 18).
+  Ma trận 'preds' là kết quả dự đoán tần suất xuất hiện của 7 loại tảo.
+```{r}
+#test.algae.clean <- knnImputation(test.algae, k = 10)
+#test.algae.clean
+full.test.algae.train <- cbind(algae[1:11], algae[12:18])
+pts.train <- array(dim = c(198,7,2),
+             dimnames = list(1:198, paste0("a",1:7), c("trues","preds")))
+for(i in 1:7) {
+    res <- runWorkflow(wfs[[i]],
+                       as.formula(paste(names(wfs)[i],"~.")),
+                       algae[,c(1:11,11+i)],
+                       full.test.algae.train[,c(1:11,11+i)])
+    pts.train[,i,"trues"] <- res$trues
+    pts.train[,i,"preds"] <- res$preds
+}
+#lấy tất cả các giá trị dự đoán đối với tảo a1 và a3: mảng đầu là kết quả trong tập sol, mảng sau là kết quả dự đoán
+pts.train[1:10,c("a1","a2","a3","a4","a5","a6","a7"),]
+
+```
+  Tiếp theo, ta tính toán sai số giữa kết quả thu về từ việc dự đoán và kết quả thực sự trong tập huấn luyện.
+```{r}
+avg.preds.train <- apply(algae[,12:18], 2, mean)
+apply((pts.train[,,"trues"] - pts.train[,,"preds"])^2, 2 ,sum) /
+    apply( (scale(pts.train[,,"trues"], avg.preds.train, FALSE))^2, 2, sum)
+```
+```{r}
+
+topPerformers(res.all)
+
+
+```
+
+## Xem kết quả cho 7 loại tảo trên tập test: test.algae
+  
+  Ma trận 'trues' là kết quả tần suất xuất hiện của 7 loại tảo của 140 mẫu nước được lấy từ algae.sols.
+  Ma trận 'preds' là kết quả dự đoán tần suất xuất hiện của 7 loại tảo của 140 mẫu nước.
+```{r}
+full.test.algae <- cbind(test.algae, algae.sols)
+pts <- array(dim = c(140,7,2),
+             dimnames = list(1:140, paste0("a",1:7), c("trues","preds")))
+for(i in 1:7) {
+    res <- runWorkflow(wfs[[i]],
+                       as.formula(paste(names(wfs)[i],"~.")),
+                       algae[,c(1:11,11+i)],
+                       full.test.algae[,c(1:11,11+i)])
+    pts[,i,"trues"] <- res$trues
+    pts[,i,"preds"] <- res$preds
+}
+pts[1:10,c("a1","a2","a3","a4","a5","a6","a7"),]
+```
+  Tiếp theo, ta tính toán sai số giữa kết quả thu về từ việc dự đoán và kết quả thực sự trong tập test.
+```{r}
+avg.preds <- apply(algae[,12:18], 2, mean)
+apply((pts[,,"trues"] - pts[,,"preds"])^2, 2 ,sum) /
+    apply( (scale(pts[,,"trues"], avg.preds, FALSE))^2, 2, sum)
+```
+  Qua quan sát, ta thấy vẫn có sự khác biệt giữa kết quả dự đoán và kết quả thực sự nhưng theo NMSE, kết quả thu được cũng không phải điều quá tệ. Tuy nhiên, khi xem sai số này trên tập huấn luyaajn và tập test, rõ ràng trên tập huấn luyện kết quả thu về là tốt hơn rất nhiều.
+# 6. Kết luận
+	
+	- Tóm tắt kết quả:
+	  + Tảo 'a1': randomForest(ntree=750, mtry=2)
+	  + Tảo 'a2': randomForest(ntree=750, mtry=2)
+	  + Tảo 'a3': randomForest(ntree=550, mtry=2)
+	  + Tảo 'a4': randomForest(ntree=250, mtry=2)
+	  + Tảo 'a5': randomForest(ntree=750, mtry=2)
+	  + Tảo 'a6': multiple linear regression
+	  + Tảo 'a7': randomForest(ntree=550, mtry=2)
+	 - Kết quả dự đoán còn khác biệt với giá trị thật sự, đặc biệt là khi dự đoán cho loại tảo ‘a7’.
+	 - Nếu có thời gian, chúng em sẽ nghiên cứu với các mô hình, thuật toán khác sao chỗ kết quả dự đoán gần với kết quả thật nhất.
+
+# 7. Tài liệu tham khảo
+  
+  - Sách "Data Mining with R Learning with Case Studies, Second Edition by Torgo, Luís"
+  - Tài liệu bài giảng trên lớp.
